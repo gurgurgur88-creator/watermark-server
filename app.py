@@ -1,7 +1,7 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-from flask import Flask, request, send_file, Response
+from flask import Flask, request, send_file
 from blind_watermark import WaterMark
 import cv2
 import numpy as np
@@ -15,10 +15,10 @@ TEXT_LEN = 8
 REPEAT_COUNT = 5 
 
 def process_image(img_path, text, out_path):
-    """이미지 전처리 및 워터마크 삽입 공통 함수"""
+    """이미지 전처리 및 워터마크 삽입"""
     img = cv2.imread(img_path)
     
-    # 메모리 절약을 위한 리사이징 (너무 크면 줄임)
+    # 메모리 보호: 너무 큰 이미지는 리사이징
     h, w = img.shape[:2]
     if max(h, w) > 1200:
         scale = 1200 / max(h, w)
@@ -31,7 +31,7 @@ def process_image(img_path, text, out_path):
     if new_h != h or new_w != w:
         img = img[:new_h, :new_w]
     
-    cv2.imwrite(img_path, img) # 리사이징된 이미지 덮어쓰기
+    cv2.imwrite(img_path, img)
 
     # 비트 생성
     text = text.ljust(TEXT_LEN)[:TEXT_LEN]
@@ -49,14 +49,14 @@ def process_image(img_path, text, out_path):
 
 @app.route('/embed', methods=['POST'])
 def embed():
-    """업로드된 파일 처리 (기존 기능)"""
+    """기존: 파일 업로드 방식"""
     try:
         if 'image' not in request.files: return "No image", 400
         file = request.files['image']
         text = request.form.get('text', 'User1234')
         
-        in_path = os.path.join(TEMP_DIR, "in_post.png")
-        out_path = os.path.join(TEMP_DIR, "out_post.png")
+        in_path = os.path.join(TEMP_DIR, "in.png")
+        out_path = os.path.join(TEMP_DIR, "out.png")
         file.save(in_path)
         
         process_image(in_path, text, out_path)
@@ -66,7 +66,7 @@ def embed():
 
 @app.route('/view', methods=['GET'])
 def view():
-    """드라이브 ID로 바로 보여주기 (새로운 기능)"""
+    """신규: 링크 방식 (이게 있어야 사진이 보임!)"""
     try:
         file_id = request.args.get('id')
         text = request.args.get('text', 'Secure')
@@ -86,11 +86,10 @@ def view():
             
         process_image(in_path, text, out_path)
         
-        # 브라우저에서 바로 보이게 리턴
         return send_file(out_path, mimetype='image/png')
         
     except Exception as e:
-        print(e)
+        print(f"Error: {e}")
         return str(e), 500
 
 if __name__ == '__main__':
