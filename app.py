@@ -6,6 +6,7 @@ from blind_watermark import WaterMark
 import cv2
 import numpy as np
 import shutil
+import requests  # 구글 드라이브 다운로드용
 
 app = Flask(__name__)
 TEMP_DIR = "temp_server"
@@ -14,17 +15,16 @@ if os.path.exists(TEMP_DIR): shutil.rmtree(TEMP_DIR)
 os.makedirs(TEMP_DIR)
 
 # ==========================================
-# 🔐 [설정] TO.000000 ~ TO.999999 대응
+# 🔐 [설정] TO.000000 ~ TO.999999 (9글자)
 # ==========================================
 TILE_SIZE = 200       
 PWD_IMG = 1
 PWD_WM  = 1234
-FIXED_BYTE_LEN = 9  # 🔥 [수정] 8 -> 9 (9글자로 늘림)
+FIXED_BYTE_LEN = 9  # 9글자 고정
 # ==========================================
 
 def text_to_bits_fixed(text: str, fixed_len_bytes: int = 9):
     # 입력 텍스트를 9글자(72비트)로 강제 고정
-    # 짧으면 뒤에 공백이 붙고, 길면 9글자에서 자름
     s = (text[:fixed_len_bytes]).ljust(fixed_len_bytes)
     bits = []
     for ch in s:
@@ -37,7 +37,7 @@ def embed_tile(img_tile, text):
         h, w = img_tile.shape[:2]
         if h < TILE_SIZE or w < TILE_SIZE: return img_tile
 
-        # 1. 텍스트 -> 비트 (9글자)
+        # 1. 텍스트 -> 비트
         wm_bits = text_to_bits_fixed(text, fixed_len_bytes=FIXED_BYTE_LEN)
         
         # 2. 짝수 크기 보정
@@ -71,7 +71,7 @@ def embed_tile(img_tile, text):
 
 def process_image_tiled(img_path, text, out_path):
     img = cv2.imread(img_path)
-    if img is None: raise Exception("이미지 읽기 실패")
+    if img is None: raise Exception("이미지 읽기 실패 (파일 손상 가능성)")
     
     max_dim = 1200 
     h, w = img.shape[:2]
@@ -95,12 +95,50 @@ def process_image_tiled(img_path, text, out_path):
     final_img = img_padded[:h, :w]
     cv2.imwrite(out_path, final_img)
 
+# ==========================================
+# 🌐 [신규] 구글 드라이브 연동 (/view)
+# ==========================================
+@app.route('/view', methods=['GET'])
+def view_image():
+    try:
+        # URL 파라미터 받기 (?id=...&text=...)
+        file_id = request.args.get('id')
+        text = request.args.get('text', 'TO.000000')
+
+        if not file_id:
+            return "Error: Missing 'id' parameter", 400
+
+        # 1. 구글 드라이브에서 이미지 다운로드
+        download_url = f'https://drive.google.com/uc?export=download&id={file_id}'
+        response = requests.get(download_url)
+        
+        if response.status_code != 200:
+            return f"Error: Failed to download from Drive (Status {response.status_code})", 404
+
+        # 임시 파일명 생성
+        rnd = str(np.random.randint(0, 100000))
+        temp_in = os.path.join(TEMP_DIR, f"drive_in_{rnd}.png")
+        temp_out = os.path.join(TEMP_DIR, f"drive_out_{rnd}.png")
+
+        # 다운로드 받은 데이터 저장
+        with open(temp_in, 'wb') as f:
+            f.write(response.content)
+
+        # 2. 워터마크 처리
+        process_image_tiled(temp_in, text, temp_out)
+
+        # 3. 브라우저로 이미지 전송
+        return send_file(temp_out, mimetype='image/png')
+
+    except Exception as e:
+        return f"Server Error: {str(e)}", 500
+
 @app.route('/embed', methods=['POST'])
 def embed():
     try:
         if 'image' not in request.files: return "No image", 400
         file = request.files['image']
-        text = request.form.get('text', 'TO.000000') # 기본 예시 변경
+        text = request.form.get('text', 'TO.000000')
         
         rnd = str(np.random.randint(0, 100000))
         in_path = os.path.join(TEMP_DIR, f"in_{rnd}.png")
@@ -115,7 +153,7 @@ def embed():
 
 @app.route('/')
 def home():
-    return "Watermark Server (9-Char Support)"
+    return "Watermark Server Running (View Mode Ready)"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
