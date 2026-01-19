@@ -212,18 +212,19 @@ def api_embed():
         
         # Encode to JPG Base64
         _, buf = cv2.imencode(".png", out_bgr)
-b64_str = base64.b64encode(buf).decode("utf-8")
+        b64_str = base64.b64encode(buf).decode("utf-8")
 
-return jsonify({
-  "ok": True,
-  "template_id": tpl_id,
-  "wm_id": wm_id,
-  "image_base64": b64_str,
-  "image_mime": "image/png"
-})
+    return jsonify({
+      "ok": True,
+      "template_id": tpl_id,
+      "wm_id": wm_id,
+      "image_base64": b64_str,
+      "image_mime": "image/png"
+    })
     except Exception as e:
         return jsonify({"ok": False, "reason": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
