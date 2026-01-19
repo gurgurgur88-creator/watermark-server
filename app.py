@@ -194,38 +194,40 @@ def api_embed():
     if not f or wm_id is None or key is None:
         return jsonify({"ok": False, "reason": "Missing image, id, or key"}), 400
 
-    # Read Image
     file_bytes = np.frombuffer(f.read(), np.uint8)
     img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     if img is None:
         return jsonify({"ok": False, "reason": "Image decode failed"}), 400
-    
+
     if img.size > MAX_IMAGE_PIXELS:
         return jsonify({"ok": False, "reason": "Image too large"}), 400
 
-    # Calculate Template ID (for reference)
     tpl_id = sha1_of_pixels_bgr(img)
 
-    # Process
     try:
         out_bgr = embed_process(img, wm_id, key, margin, grid_amp)
-        
-        # Encode to JPG Base64
-        _, buf = cv2.imencode(".png", out_bgr)
+
+        ok, buf = cv2.imencode(".png", out_bgr)
+        if not ok:
+            return jsonify({"ok": False, "reason": "PNG encode failed"}), 500
+
         b64_str = base64.b64encode(buf).decode("utf-8")
 
-         return jsonify({
-          "ok": True,
-          "template_id": tpl_id,
-          "wm_id": wm_id,
-          "image_base64": b64_str,
-          "image_mime": "image/png"
-        })
+        return jsonify({
+            "ok": True,
+            "template_id": tpl_id,
+            "wm_id": wm_id,
+            "image_base64": b64_str,
+            "image_mime": "image/png"
+        }), 200
+
     except Exception as e:
         return jsonify({"ok": False, "reason": str(e)}), 500
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 
